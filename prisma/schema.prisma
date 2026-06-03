@@ -1,0 +1,22 @@
+// Prisma schema — defines your database tables.
+// Docs: https://pris.ly/d/prisma-schema
+//
+// After changing a model here, run:  npm run db:push
+// (that syncs your Postgres database to match this file)
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ── Sample model used by the "Notes" tool ──────────────────────────────
+// Each tool that needs to store data can add its own model below.
+model Note {
+  id        String   @id @default(cuid())
+  content   String
+  createdAt DateTime @default(now())
+}
