@@ -52,6 +52,9 @@ npm run dev                       # http://localhost:3000
 - **Commit and push after each change.** Commit each change directly to `main`
   and push to GitHub (no branch/PR), then note the commit id. Never commit
   secrets — `.env` stays gitignored.
+- **Record new conventions here.** This file is the source of truth for project
+  conventions — when a new one is agreed, add it to this list so everyone on the
+  repo picks it up.
 - **Next.js 16 has breaking changes.** Before writing framework code, read the
   relevant guide under `node_modules/next/dist/docs/` — see `AGENTS.md`.
 - **Adding a tool / database-backed tools:** see `README.md` for the pattern
