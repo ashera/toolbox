@@ -1,8 +1,54 @@
 import Link from "next/link";
 import { tools } from "@/lib/tools";
+import { prisma } from "@/lib/prisma";
+
+// This page reads live data (the notes count) from the database, so it renders
+// dynamically on each request rather than being statically cached.
+
+type NotesStats = { count: number; lastAddedAt: Date | null };
+
+// Load stats for the Quick Notes card. Wrapped in try/catch so a missing or
+// unreachable database just hides the stats instead of crashing the homepage.
+async function getNotesStats(): Promise<NotesStats | null> {
+  if (!process.env.DATABASE_URL) return null;
+  try {
+    const [count, latest] = await Promise.all([
+      prisma.note.count(),
+      prisma.note.findFirst({
+        orderBy: { createdAt: "desc" },
+        select: { createdAt: true },
+      }),
+    ]);
+    return { count, lastAddedAt: latest?.createdAt ?? null };
+  } catch {
+    return null;
+  }
+}
+
+// Turn a date into a short "2 hours ago" style string.
+function timeAgo(date: Date): string {
+  const seconds = Math.round((Date.now() - date.getTime()) / 1000);
+  const units: [Intl.RelativeTimeFormatUnit, number][] = [
+    ["year", 60 * 60 * 24 * 365],
+    ["month", 60 * 60 * 24 * 30],
+    ["day", 60 * 60 * 24],
+    ["hour", 60 * 60],
+    ["minute", 60],
+    ["second", 1],
+  ];
+  const rtf = new Intl.RelativeTimeFormat("en", { numeric: "auto" });
+  for (const [unit, secsPerUnit] of units) {
+    if (Math.abs(seconds) >= secsPerUnit || unit === "second") {
+      return rtf.format(-Math.round(seconds / secsPerUnit), unit);
+    }
+  }
+  return "just now";
+}
 
 // The homepage: a gallery of cards, one per tool in the registry.
-export default function Home() {
+export default async function Home() {
+  const notesStats = await getNotesStats();
+
   return (
     <main className="mx-auto w-full max-w-5xl flex-1 px-6 py-12">
       <section className="mb-10">
@@ -33,6 +79,26 @@ export default function Home() {
             <p className="mt-1 text-sm text-black/60 dark:text-white/60">
               {tool.description}
             </p>
+            {tool.slug === "notes" && notesStats && (
+              <p className="mt-3 border-t border-black/5 pt-3 text-xs text-black/50 dark:border-white/10 dark:text-white/50">
+                {notesStats.count === 0 ? (
+                  "No notes yet"
+                ) : (
+                  <>
+                    📋 {notesStats.count}{" "}
+                    {notesStats.count === 1 ? "note" : "notes"}
+                    {notesStats.lastAddedAt && (
+                      <>
+                        {" · last added "}
+                        <span title={notesStats.lastAddedAt.toLocaleString()}>
+                          {timeAgo(notesStats.lastAddedAt)}
+                        </span>
+                      </>
+                    )}
+                  </>
+                )}
+              </p>
+            )}
           </Link>
         ))}
       </section>
