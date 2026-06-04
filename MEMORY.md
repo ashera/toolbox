@@ -49,6 +49,9 @@ npm run dev                       # http://localhost:3000
   `npm run dev` is running and confirm the change compiled cleanly and the
   affected route serves a 200. The server hot-reloads, so don't start a second
   instance (the port will already be in use) — check the existing one.
+- **Commit and push after each change.** Commit each change directly to `main`
+  and push to GitHub (no branch/PR), then note the commit id. Never commit
+  secrets — `.env` stays gitignored.
 - **Next.js 16 has breaking changes.** Before writing framework code, read the
   relevant guide under `node_modules/next/dist/docs/` — see `AGENTS.md`.
 - **Adding a tool / database-backed tools:** see `README.md` for the pattern
