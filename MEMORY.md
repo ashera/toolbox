@@ -55,6 +55,9 @@ npm run dev                       # http://localhost:3000
 - **Record new conventions here.** This file is the source of truth for project
   conventions — when a new one is agreed, add it to this list so everyone on the
   repo picks it up.
+- **Tooling auto-approval.** `.claude/settings.json` (committed) lets Claude Code
+  run git commands and write/edit files in the repo without prompting. Personal
+  approvals stay in the gitignored `.claude/settings.local.json`.
 - **Next.js 16 has breaking changes.** Before writing framework code, read the
   relevant guide under `node_modules/next/dist/docs/` — see `AGENTS.md`.
 - **Adding a tool / database-backed tools:** see `README.md` for the pattern
