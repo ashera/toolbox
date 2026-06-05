@@ -49,9 +49,12 @@ npm run dev                       # http://localhost:3000
   `npm run dev` is running and confirm the change compiled cleanly and the
   affected route serves a 200. The server hot-reloads, so don't start a second
   instance (the port will already be in use) — check the existing one.
-- **Commit and push after each change.** Commit each change directly to `main`
-  and push to GitHub (no branch/PR), then note the commit id. Never commit
-  secrets — `.env` stays gitignored.
+- **Commit and push after each change.** Commit each change directly to `main`,
+  then **sync before pushing**: `git fetch origin` + `git pull --rebase origin
+  main` (replays your commit on top of any changes other devs pushed; keeps
+  history linear), verify it still compiles, then `git push origin main`. If the
+  push is rejected, repeat fetch → rebase → push. Note the commit id. Never
+  commit secrets — `.env` stays gitignored.
 - **Record new conventions here.** This file is the source of truth for project
   conventions — when a new one is agreed, add it to this list so everyone on the
   repo picks it up.
