@@ -41,6 +41,14 @@ export const tools: Tool[] = [
     icon: "📝",
     category: "Data",
   },
+  {
+    slug: "advisor",
+    name: "Investment Advisor",
+    description:
+      "Describe your investing style and get specific, AI-researched investment ideas with live data. Educational, not financial advice.",
+    icon: "📈",
+    category: "Finance",
+  },
 ];
 
 /** Look up a single tool by its slug (used by tool pages for their header). */
