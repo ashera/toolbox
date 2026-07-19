@@ -1,6 +1,6 @@
 "use client"; // Interactive calculator — runs in the browser.
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { addExpense, deleteExpense } from "./actions";
 import {
   CATEGORIES,
@@ -121,6 +121,10 @@ function Field({
   );
 }
 
+// localStorage key for the income inputs. Kept in the browser only (private,
+// never sent to the server) so they're restored on reload without re-entry.
+const STORAGE_KEY = "tax-return-fy26:inputs";
+
 export default function TaxCalculator({
   expenses,
   dbReady,
@@ -137,6 +141,41 @@ export default function TaxCalculator({
   const [hasHelpDebt, setHasHelpDebt] = useState(false);
   // Category chosen in the "add expense" form, so we can preview eligibility.
   const [draftCategory, setDraftCategory] = useState(CATEGORIES[0].id);
+  // Becomes true once saved inputs have been loaded, so the save effect below
+  // doesn't overwrite stored values with the initial defaults before then.
+  const [hydrated, setHydrated] = useState(false);
+
+  // Load saved inputs once, after mount (localStorage is client-only, so this
+  // can't run during SSR — starting from defaults keeps hydration consistent).
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (raw) {
+        const s = JSON.parse(raw);
+        if (typeof s.salary === "string") setSalary(s.salary);
+        if (typeof s.otherIncome === "string") setOtherIncome(s.otherIncome);
+        if (typeof s.paygWithheld === "string") setPaygWithheld(s.paygWithheld);
+        if (typeof s.hasHospitalCover === "boolean") setHasHospitalCover(s.hasHospitalCover);
+        if (typeof s.hasHelpDebt === "boolean") setHasHelpDebt(s.hasHelpDebt);
+      }
+    } catch {
+      // Ignore malformed/unavailable storage — just start from defaults.
+    }
+    setHydrated(true);
+  }, []);
+
+  // Auto-save the income inputs whenever they change (after the initial load).
+  useEffect(() => {
+    if (!hydrated) return;
+    try {
+      localStorage.setItem(
+        STORAGE_KEY,
+        JSON.stringify({ salary, otherIncome, paygWithheld, hasHospitalCover, hasHelpDebt }),
+      );
+    } catch {
+      // Storage full or blocked — persistence is best-effort, so ignore.
+    }
+  }, [hydrated, salary, otherIncome, paygWithheld, hasHospitalCover, hasHelpDebt]);
 
   const num = (s: string) => (s ? parseFloat(s) || 0 : 0);
 
@@ -206,6 +245,10 @@ export default function TaxCalculator({
               <span className="block text-xs text-black/45 dark:text-white/45">Adds the 2025–26 compulsory repayment</span>
             </span>
           </label>
+
+          <p className="pt-1 text-xs text-black/40 dark:text-white/40">
+            ↳ Saved automatically in this browser and restored when you return.
+          </p>
         </div>
 
         {/* ── Result ── */}
