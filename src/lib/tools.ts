@@ -49,6 +49,14 @@ export const tools: Tool[] = [
     icon: "📈",
     category: "Finance",
   },
+  {
+    slug: "tax-return-fy26",
+    name: "FY26 Tax Return Estimator",
+    description:
+      "Estimate your 2025–26 Australian tax refund or bill: income tax, Medicare levy & surcharge, LITO, and HELP/HECS. Estimate only, not tax advice.",
+    icon: "🧾",
+    category: "Finance",
+  },
 ];
 
 /** Look up a single tool by its slug (used by tool pages for their header). */
