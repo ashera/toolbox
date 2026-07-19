@@ -9,6 +9,12 @@ import { prisma } from "@/lib/prisma";
 import TaxCalculator from "./TaxCalculator";
 import type { Expense } from "./eligibility";
 
+// Render on every request instead of being prerendered at build time. This page
+// reads live, per-visit data from the database, and the build environment (e.g.
+// on Railway) often can't reach the DB — without this, a build-time snapshot
+// (showing the "not connected" state) would be served even after the DB is up.
+export const dynamic = "force-dynamic";
+
 export default async function TaxReturnFy26Page() {
   let expenses: Expense[] = [];
   let dbReady = false;

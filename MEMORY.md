@@ -66,3 +66,13 @@ npm run dev                       # http://localhost:3000
 - **Adding a tool / database-backed tools:** see `README.md` for the pattern
   (create `src/app/tools/<slug>/page.tsx`, register it in `src/lib/tools.ts`,
   add a Prisma model + server actions for data).
+- **Schema changes sync on deploy.** The production `start` script runs
+  `prisma db push --skip-generate` before `next start`, so every deploy syncs
+  `schema.prisma` to the database at boot (the build phase can't reach the DB —
+  the internal `*.railway.internal` host only resolves at runtime). Adding a new
+  model therefore needs no manual `db:push` against Railway; just commit and
+  deploy. (`db push` is additive/idempotent and won't drop existing data.)
+- **DB-backed pages must be dynamic.** A tool page that reads the database at
+  request time must set `export const dynamic = "force-dynamic";`. Otherwise
+  Next prerenders it at build time — when the DB is unreachable — and serves that
+  stale snapshot at runtime.
