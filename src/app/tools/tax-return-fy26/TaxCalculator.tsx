@@ -1,7 +1,7 @@
 "use client"; // Interactive calculator — runs in the browser.
 
-import { useEffect, useState } from "react";
-import { addExpense, deleteExpense } from "./actions";
+import { useEffect, useRef, useState } from "react";
+import { addExpense, deleteExpense, saveTaxProfile } from "./actions";
 import {
   CATEGORIES,
   getCategory,
@@ -9,6 +9,7 @@ import {
   excludedReason,
   type Expense,
   type Eligibility,
+  type TaxProfileInput,
 } from "./eligibility";
 
 // ───────────────────────── FY26 (2025–26) tax engine ─────────────────────────
@@ -121,61 +122,46 @@ function Field({
   );
 }
 
-// localStorage key for the income inputs. Kept in the browser only (private,
-// never sent to the server) so they're restored on reload without re-entry.
-const STORAGE_KEY = "tax-return-fy26:inputs";
-
 export default function TaxCalculator({
   expenses,
+  initialProfile,
   dbReady,
   dbError,
 }: {
   expenses: Expense[];
+  initialProfile: TaxProfileInput | null;
   dbReady: boolean;
   dbError?: string;
 }) {
-  const [salary, setSalary] = useState("");
-  const [otherIncome, setOtherIncome] = useState("");
-  const [paygWithheld, setPaygWithheld] = useState("");
-  const [hasHospitalCover, setHasHospitalCover] = useState(true);
-  const [hasHelpDebt, setHasHelpDebt] = useState(false);
+  // Seed the income fields from the database (via the server component), so
+  // they load on any device. SSR and first client render use the same values.
+  const [salary, setSalary] = useState(initialProfile?.salary ?? "");
+  const [otherIncome, setOtherIncome] = useState(initialProfile?.otherIncome ?? "");
+  const [paygWithheld, setPaygWithheld] = useState(initialProfile?.paygWithheld ?? "");
+  const [hasHospitalCover, setHasHospitalCover] = useState(initialProfile?.hasHospitalCover ?? true);
+  const [hasHelpDebt, setHasHelpDebt] = useState(initialProfile?.hasHelpDebt ?? false);
   // Category chosen in the "add expense" form, so we can preview eligibility.
   const [draftCategory, setDraftCategory] = useState(CATEGORIES[0].id);
-  // Becomes true once saved inputs have been loaded, so the save effect below
-  // doesn't overwrite stored values with the initial defaults before then.
-  const [hydrated, setHydrated] = useState(false);
 
-  // Load saved inputs once, after mount (localStorage is client-only, so this
-  // can't run during SSR — starting from defaults keeps hydration consistent).
+  // Auto-save the income fields to the database, debounced so we write ~600ms
+  // after typing stops rather than on every keystroke. Skips the first run
+  // (the seeded values already match the DB) and no-ops when the DB is down.
+  const [syncState, setSyncState] = useState<"idle" | "saving" | "saved">("idle");
+  const skipFirstSave = useRef(true);
   useEffect(() => {
-    try {
-      const raw = localStorage.getItem(STORAGE_KEY);
-      if (raw) {
-        const s = JSON.parse(raw);
-        if (typeof s.salary === "string") setSalary(s.salary);
-        if (typeof s.otherIncome === "string") setOtherIncome(s.otherIncome);
-        if (typeof s.paygWithheld === "string") setPaygWithheld(s.paygWithheld);
-        if (typeof s.hasHospitalCover === "boolean") setHasHospitalCover(s.hasHospitalCover);
-        if (typeof s.hasHelpDebt === "boolean") setHasHelpDebt(s.hasHelpDebt);
-      }
-    } catch {
-      // Ignore malformed/unavailable storage — just start from defaults.
+    if (!dbReady) return;
+    if (skipFirstSave.current) {
+      skipFirstSave.current = false;
+      return;
     }
-    setHydrated(true);
-  }, []);
-
-  // Auto-save the income inputs whenever they change (after the initial load).
-  useEffect(() => {
-    if (!hydrated) return;
-    try {
-      localStorage.setItem(
-        STORAGE_KEY,
-        JSON.stringify({ salary, otherIncome, paygWithheld, hasHospitalCover, hasHelpDebt }),
-      );
-    } catch {
-      // Storage full or blocked — persistence is best-effort, so ignore.
-    }
-  }, [hydrated, salary, otherIncome, paygWithheld, hasHospitalCover, hasHelpDebt]);
+    setSyncState("saving");
+    const t = setTimeout(() => {
+      saveTaxProfile({ salary, otherIncome, paygWithheld, hasHospitalCover, hasHelpDebt })
+        .then(() => setSyncState("saved"))
+        .catch(() => setSyncState("idle"));
+    }, 600);
+    return () => clearTimeout(t);
+  }, [dbReady, salary, otherIncome, paygWithheld, hasHospitalCover, hasHelpDebt]);
 
   const num = (s: string) => (s ? parseFloat(s) || 0 : 0);
 
@@ -247,7 +233,13 @@ export default function TaxCalculator({
           </label>
 
           <p className="pt-1 text-xs text-black/40 dark:text-white/40">
-            ↳ Saved automatically in this browser and restored when you return.
+            {!dbReady
+              ? "↳ Not saved — database not connected."
+              : syncState === "saving"
+                ? "↳ Saving…"
+                : syncState === "saved"
+                  ? "↳ Saved — synced across your devices."
+                  : "↳ Auto-saved to your account and synced across devices."}
           </p>
         </div>
 

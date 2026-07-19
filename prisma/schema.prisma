@@ -22,6 +22,18 @@ model Note {
 }
 
 // ── Used by the "FY26 Tax Return Estimator" tool ───────────────────────
+// A single, shared row (id = "default") holding the income inputs, so they
+// sync across devices instead of living in one browser's localStorage.
+model TaxProfile {
+  id               String   @id @default("default")
+  salary           String   @default("")
+  otherIncome      String   @default("")
+  paygWithheld     String   @default("")
+  hasHospitalCover Boolean  @default(true)
+  hasHelpDebt      Boolean  @default(false)
+  updatedAt        DateTime @updatedAt
+}
+
 // One row per itemised work-related expense the user enters. The tool sums
 // the claimable portion of these into the return's deductions.
 model ExpenseItem {

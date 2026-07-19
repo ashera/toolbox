@@ -7,7 +7,7 @@
 import ToolShell from "@/components/ToolShell";
 import { prisma } from "@/lib/prisma";
 import TaxCalculator from "./TaxCalculator";
-import type { Expense } from "./eligibility";
+import type { Expense, TaxProfileInput } from "./eligibility";
 
 // Render on every request instead of being prerendered at build time. This page
 // reads live, per-visit data from the database, and the build environment (e.g.
@@ -17,6 +17,7 @@ export const dynamic = "force-dynamic";
 
 export default async function TaxReturnFy26Page() {
   let expenses: Expense[] = [];
+  let profile: TaxProfileInput | null = null;
   let dbReady = false;
   let dbError: string | undefined;
 
@@ -24,18 +25,31 @@ export default async function TaxReturnFy26Page() {
     dbError = "DATABASE_URL is not set.";
   } else {
     try {
-      const rows = await prisma.expenseItem.findMany({
-        orderBy: { createdAt: "asc" },
-        select: {
-          id: true,
-          description: true,
-          category: true,
-          amount: true,
-          workUsePercent: true,
-          reimbursed: true,
-        },
-      });
+      const [rows, savedProfile] = await Promise.all([
+        prisma.expenseItem.findMany({
+          orderBy: { createdAt: "asc" },
+          select: {
+            id: true,
+            description: true,
+            category: true,
+            amount: true,
+            workUsePercent: true,
+            reimbursed: true,
+          },
+        }),
+        prisma.taxProfile.findUnique({
+          where: { id: "default" },
+          select: {
+            salary: true,
+            otherIncome: true,
+            paygWithheld: true,
+            hasHospitalCover: true,
+            hasHelpDebt: true,
+          },
+        }),
+      ]);
       expenses = rows;
+      profile = savedProfile;
       dbReady = true;
     } catch (error) {
       dbError = error instanceof Error ? error.message : String(error);
@@ -44,7 +58,12 @@ export default async function TaxReturnFy26Page() {
 
   return (
     <ToolShell slug="tax-return-fy26">
-      <TaxCalculator expenses={expenses} dbReady={dbReady} dbError={dbError} />
+      <TaxCalculator
+        expenses={expenses}
+        initialProfile={profile}
+        dbReady={dbReady}
+        dbError={dbError}
+      />
     </ToolShell>
   );
 }

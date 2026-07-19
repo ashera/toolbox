@@ -116,6 +116,16 @@ export function getCategory(id: string): Category {
   return BY_ID.get(id) ?? CATEGORIES[CATEGORIES.length - 1];
 }
 
+/** The income inputs persisted for the tool (mirrors the TaxProfile model).
+ *  Amounts are kept as strings to preserve exactly what was typed (incl. empty). */
+export type TaxProfileInput = {
+  salary: string;
+  otherIncome: string;
+  paygWithheld: string;
+  hasHospitalCover: boolean;
+  hasHelpDebt: boolean;
+};
+
 /** A stored expense row (mirrors the Prisma ExpenseItem model). */
 export type Expense = {
   id: string;
