@@ -220,7 +220,13 @@ export default function TaxCalculator({
             <input type="checkbox" checked={hasHospitalCover} onChange={(e) => setHasHospitalCover(e.target.checked)} className="h-4 w-4" />
             <span>
               I had private <strong>hospital</strong> cover all year
-              <span className="block text-xs text-black/45 dark:text-white/45">Avoids the Medicare levy surcharge</span>
+              <span className="block text-xs text-black/45 dark:text-white/45">
+                {hasHospitalCover
+                  ? "No surcharge — you're covered."
+                  : surcharge > 0
+                    ? `Surcharge applies at this income: ${money(surcharge)}`
+                    : "No surcharge — income is under the $101,000 threshold, so this box has no effect."}
+              </span>
             </span>
           </label>
 
