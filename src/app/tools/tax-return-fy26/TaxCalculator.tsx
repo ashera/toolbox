@@ -59,6 +59,14 @@ function helpRepayment(income: number): number {
   return Math.min(marginal, income * 0.1);
 }
 
+/** Total tax + levies at a given taxable income, holding the flags constant.
+ *  Used to value deductions: how much tax is saved by lowering taxable income. */
+function liabilityAt(taxable: number, hasHospitalCover: boolean, hasHelpDebt: boolean): number {
+  const net = Math.max(0, incomeTax(taxable) - lito(taxable));
+  const help = hasHelpDebt ? helpRepayment(taxable) : 0;
+  return net + medicareLevy(taxable) + medicareLevySurcharge(taxable, hasHospitalCover) + help;
+}
+
 const money = (n: number) =>
   n.toLocaleString("en-AU", {
     style: "currency",
@@ -151,6 +159,14 @@ export default function TaxCalculator({
   const isRefund = balance < 0;
   const effectiveRate = taxable > 0 ? (totalLiability / taxable) * 100 : 0;
 
+  // What the deductions are worth: the drop in total tax from removing them.
+  // A deduction only saves tax at your marginal rate, not the full dollar.
+  const liabilityNoDeductions = liabilityAt(grossIncome, hasHospitalCover, hasHelpDebt);
+  const deductionTaxSaving = Math.max(0, liabilityNoDeductions - totalLiability);
+  // Tax saved per $1 deducted — the same for every dollar, so each expense's
+  // contribution is proportional to its claimable amount (and they sum exactly).
+  const savingPerDollar = deductions > 0 ? deductionTaxSaving / deductions : 0;
+
   const breakdown = [
     { label: "Gross income", value: grossIncome },
     { label: "Less work-related deductions", value: -deductions, muted: true },
@@ -215,16 +231,37 @@ export default function TaxCalculator({
 
       {/* ── Itemised work-related expenses (DB-backed) ── */}
       <section className="mt-10">
-        <div className="flex items-baseline justify-between">
+        <div className="flex items-baseline justify-between gap-4">
           <h2 className="text-lg font-semibold">Work-related expenses</h2>
-          <span className="text-sm text-black/50 dark:text-white/50">
-            Claimable total: <strong className="tabular-nums">{money(deductions)}</strong>
-          </span>
+          <div className="text-right text-sm text-black/50 dark:text-white/50">
+            <div>
+              Claimable: <strong className="tabular-nums text-foreground">{money(deductions)}</strong>
+            </div>
+            <div>
+              Tax saved:{" "}
+              <strong className="tabular-nums text-green-700 dark:text-green-400">
+                {money(deductionTaxSaving)}
+              </strong>
+              {deductions > 0 && savingPerDollar > 0 && (
+                <span className="text-black/40 dark:text-white/40"> · {Math.round(savingPerDollar * 100)}% per $1</span>
+              )}
+            </div>
+          </div>
         </div>
         <p className="mt-1 text-sm text-black/55 dark:text-white/55">
           Add each expense and the tool flags likely deductibility, then feeds the claimable
           portion into your taxable income above. Saved to your database so they persist.
         </p>
+        {/* How much the deductions are actually worth, adapting to the entered income. */}
+        {deductions > 0 && (
+          <p className="mt-2 rounded-md bg-green-600/[0.07] px-3 py-2 text-sm text-black/70 dark:text-white/70">
+            {grossIncome === 0
+              ? "Enter your salary above to see how much tax these deductions save."
+              : deductionTaxSaving === 0
+                ? "At this taxable income there's no tax for these deductions to reduce — so they add nothing to your refund."
+                : `These deductions cut your tax by about ${money(deductionTaxSaving)} — roughly ${Math.round(savingPerDollar * 100)}c of every $1 claimed (your marginal rate incl. Medicare levy). Each expense's share is shown as “saves ~$” below.`}
+          </p>
+        )}
 
         {!dbReady ? (
           <div className="mt-4 rounded-lg border border-amber-400/40 bg-amber-50 p-5 text-sm dark:bg-amber-950/30">
@@ -300,6 +337,7 @@ export default function TaxCalculator({
                 const cat = getCategory(e.category);
                 const claimable = claimableAmount(e);
                 const reason = excludedReason(e);
+                const contribution = claimable * savingPerDollar; // its share of the refund
                 return (
                   <li key={e.id} className="flex items-start justify-between gap-3 rounded-lg border border-black/10 px-4 py-3 dark:border-white/15">
                     <div className="min-w-0">
@@ -317,7 +355,13 @@ export default function TaxCalculator({
                     <div className="flex shrink-0 items-center gap-3">
                       <div className="text-right">
                         <div className="tabular-nums font-medium">{money(claimable)}</div>
-                        {reason && <div className="text-xs text-black/40 dark:text-white/40">{reason}</div>}
+                        {claimable > 0 ? (
+                          <div className="text-xs tabular-nums text-green-700 dark:text-green-400">
+                            {contribution > 0 ? `saves ~${money(contribution)}` : "claimable"}
+                          </div>
+                        ) : (
+                          reason && <div className="text-xs text-black/40 dark:text-white/40">{reason}</div>
+                        )}
                       </div>
                       <form action={deleteExpense}>
                         <input type="hidden" name="id" value={e.id} />
@@ -337,8 +381,10 @@ export default function TaxCalculator({
         <strong>Estimate only — not tax advice.</strong> Uses 2025–26 resident rates for a single
         individual as at July 2026. Expense deductibility flags apply the ATO&apos;s general employee
         rules — treat &ldquo;check conditions&rdquo; items as prompts to confirm with your accountant,
-        who can settle the finer calls (capital items, mixed-use, self-education). It doesn&apos;t
-        handle offsets beyond LITO, family/senior Medicare thresholds, capital gains, or franking credits.
+        who can settle the finer calls (capital items, mixed-use, self-education). &ldquo;Tax saved&rdquo;
+        values each deduction at your marginal rate (incl. Medicare levy) and is approximate. It
+        doesn&apos;t handle offsets beyond LITO, family/senior Medicare thresholds, capital gains, or
+        franking credits.
       </p>
     </>
   );
