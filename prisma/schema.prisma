@@ -20,3 +20,16 @@ model Note {
   content   String
   createdAt DateTime @default(now())
 }
+
+// ── Used by the "FY26 Tax Return Estimator" tool ───────────────────────
+// One row per itemised work-related expense the user enters. The tool sums
+// the claimable portion of these into the return's deductions.
+model ExpenseItem {
+  id             String   @id @default(cuid())
+  description    String
+  category       String // maps to a category id in eligibility.ts
+  amount         Float // full amount paid, in dollars
+  workUsePercent Int      @default(100) // 0–100; portion used for work
+  reimbursed     Boolean  @default(false) // if true, nothing is claimable
+  createdAt      DateTime @default(now())
+}
