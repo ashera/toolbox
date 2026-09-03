@@ -2,6 +2,7 @@
 
 import { useMemo, useState, useTransition, useEffect } from "react";
 import Papa from "papaparse";
+import readXlsxFile from "read-excel-file/browser";
 import {
   type CorrespondenceDTO,
   type NewCorrespondence,
@@ -135,7 +136,7 @@ export default function CorrespondenceApp({
             onClick={() => setShowImport(true)}
             className="rounded-lg border border-black/15 px-4 py-2 text-sm font-medium transition-colors hover:border-black/40 dark:border-white/20 dark:hover:border-white/50"
           >
-            ⬆ Import CSV
+            ⬆ Import file
           </button>
         </div>
         <label className="flex items-center gap-2 text-xs text-black/50 dark:text-white/50">
@@ -497,7 +498,7 @@ function EmptyState({
           onClick={onImport}
           className="rounded-lg border border-black/15 px-4 py-2 text-sm font-medium transition-colors hover:border-black/40 dark:border-white/20 dark:hover:border-white/50"
         >
-          ⬆ Import from CSV
+          ⬆ Import a file
         </button>
       </div>
     </div>
@@ -691,6 +692,45 @@ function normStatus(raw: string): string {
   return "Awaiting";
 }
 
+// Read a CSV or Excel file into { headers, rows-as-objects }.
+function cellToStr(c: unknown): string {
+  if (c === null || c === undefined) return "";
+  if (c instanceof Date) return c.toISOString().slice(0, 10);
+  return String(c).trim();
+}
+
+async function parseSpreadsheet(
+  file: File,
+): Promise<{ headers: string[]; data: Record<string, string>[] }> {
+  const name = file.name.toLowerCase();
+  if (name.endsWith(".xlsx") || name.endsWith(".xls")) {
+    const matrix = (await readXlsxFile(file)) as unknown as unknown[][];
+    const headerRow = matrix[0] ?? [];
+    const headers = headerRow.map((c, i) => cellToStr(c) || `Column ${i + 1}`);
+    const data = matrix.slice(1).map((r) => {
+      const obj: Record<string, string> = {};
+      headers.forEach((h, i) => {
+        obj[h] = cellToStr(r[i]);
+      });
+      return obj;
+    });
+    return { headers, data };
+  }
+  return new Promise((resolve, reject) => {
+    Papa.parse<Record<string, string>>(file, {
+      header: true,
+      skipEmptyLines: "greedy",
+      transformHeader: (h) => h.trim(),
+      complete: (res) =>
+        resolve({
+          headers: (res.meta.fields ?? []).filter(Boolean),
+          data: res.data,
+        }),
+      error: (err) => reject(err),
+    });
+  });
+}
+
 function ImportModal({
   onClose,
   onImport,
@@ -700,38 +740,79 @@ function ImportModal({
   onImport: (rows: NewCorrespondence[]) => void;
   pending: boolean;
 }) {
-  const [rows, setRows] = useState<Record<string, string>[] | null>(null);
+  type Stage = "drop" | "working" | "review";
+  const [stage, setStage] = useState<Stage>("drop");
+  const [fileName, setFileName] = useState("");
+  const [rows, setRows] = useState<Record<string, string>[]>([]);
   const [columns, setColumns] = useState<string[]>([]);
   const [mapping, setMapping] = useState<Record<MapTarget, string>>(
     {} as Record<MapTarget, string>,
   );
   const [defaultSource, setDefaultSource] = useState("Aconex");
+  const [aiReasoning, setAiReasoning] = useState<string | null>(null);
+  const [aiOk, setAiOk] = useState(false);
+  const [showManual, setShowManual] = useState(false);
   const [dragOver, setDragOver] = useState(false);
-  const [parseError, setParseError] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
-  function handleFile(file: File) {
-    setParseError(null);
-    Papa.parse<Record<string, string>>(file, {
-      header: true,
-      skipEmptyLines: "greedy",
-      transformHeader: (h) => h.trim(),
-      complete: (res) => {
-        const cols = (res.meta.fields ?? []).filter(Boolean);
-        if (cols.length === 0) {
-          setParseError("Couldn't read any columns from that file.");
-          return;
+  async function handleFile(file: File) {
+    setError(null);
+    setFileName(file.name);
+    setStage("working");
+    try {
+      const { headers, data } = await parseSpreadsheet(file);
+      if (headers.length === 0)
+        throw new Error("Couldn't read any columns from that file.");
+      setColumns(headers);
+      setRows(data);
+
+      // Let Claude interpret which column is which; fall back to a keyword guess.
+      let map = guessMapping(headers);
+      let source = "Aconex";
+      let reasoning: string | null = null;
+      let ok = false;
+      try {
+        const res = await fetch("/api/correspondence/interpret", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ headers, sampleRows: data.slice(0, 6) }),
+        });
+        if (res.ok) {
+          const ai = await res.json();
+          const m = {} as Record<MapTarget, string>;
+          for (const f of MAP_FIELDS) {
+            const v = ai.columnMap?.[f.key];
+            m[f.key] = typeof v === "string" && headers.includes(v) ? v : "";
+          }
+          map = m;
+          source = ai.source || "Aconex";
+          reasoning = ai.reasoning || "Matched your columns automatically.";
+          ok = true;
         }
-        setColumns(cols);
-        setRows(res.data);
-        setMapping(guessMapping(cols));
-      },
-      error: (err) => setParseError(err.message),
-    });
+      } catch {
+        /* fall back to the offline guess */
+      }
+      setMapping(map);
+      setDefaultSource(source);
+      setAiReasoning(reasoning);
+      setAiOk(ok);
+      setShowManual(!ok);
+      setStage("review");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Couldn't read that file.");
+      setStage("drop");
+    }
+  }
+
+  function reset() {
+    setStage("drop");
+    setRows([]);
+    setColumns([]);
+    setError(null);
   }
 
   // Build the importable rows from the current mapping.
   const built = useMemo(() => {
-    if (!rows) return { valid: [] as NewCorrespondence[], skipped: 0 };
     const valid: NewCorrespondence[] = [];
     let skipped = 0;
     for (const r of rows) {
@@ -763,8 +844,8 @@ function ImportModal({
   );
 
   return (
-    <Modal onClose={onClose} title="Import correspondence from CSV" wide>
-      {!rows ? (
+    <Modal onClose={onClose} title="Import correspondence" wide>
+      {stage === "drop" && (
         <div>
           <div
             onDragOver={(e) => {
@@ -785,16 +866,18 @@ function ImportModal({
             }`}
           >
             <div className="text-4xl">📥</div>
-            <p className="mt-3 font-medium">Drag &amp; drop your CSV here</p>
+            <p className="mt-3 font-medium">
+              Drag &amp; drop your Aconex export here
+            </p>
             <p className="mt-1 text-sm text-black/50 dark:text-white/50">
-              e.g. an exported Aconex mail register — or any spreadsheet saved as
-              CSV.
+              Excel (.xlsx) or CSV — Claude reads it and works out the columns
+              for you. No manual matching.
             </p>
             <label className="mt-4 inline-block cursor-pointer rounded-lg border border-black/15 px-4 py-2 text-sm font-medium transition-colors hover:border-black/40 dark:border-white/20 dark:hover:border-white/50">
               Choose a file
               <input
                 type="file"
-                accept=".csv,text/csv"
+                accept=".csv,text/csv,.xlsx,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                 className="hidden"
                 onChange={(e) => {
                   const file = e.target.files?.[0];
@@ -803,67 +886,177 @@ function ImportModal({
               />
             </label>
           </div>
-          {parseError && (
+          {error && (
             <p className="mt-3 text-sm text-red-600 dark:text-red-400">
-              {parseError}
+              {error}
             </p>
           )}
         </div>
-      ) : (
+      )}
+
+      {stage === "working" && (
+        <div className="flex flex-col items-center justify-center gap-3 py-14 text-center">
+          <div className="h-8 w-8 animate-spin rounded-full border-2 border-black/15 border-t-black/60 dark:border-white/20 dark:border-t-white/70" />
+          <p className="text-sm font-medium">✨ Reading your file…</p>
+          <p className="text-xs text-black/45 dark:text-white/45">
+            Claude is working out which column is which.
+          </p>
+        </div>
+      )}
+
+      {stage === "review" && (
         <div className="space-y-5">
           <div className="flex items-center justify-between text-sm">
             <span className="text-black/60 dark:text-white/60">
-              {rows.length} rows found · match your columns below
+              📄 {fileName} · {rows.length} rows
             </span>
             <button
-              onClick={() => setRows(null)}
+              onClick={reset}
               className="text-black/50 underline hover:text-black dark:text-white/50 dark:hover:text-white"
             >
               choose a different file
             </button>
           </div>
 
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            {MAP_FIELDS.map((f) => (
-              <label key={f.key} className="block">
-                <span className="mb-1 block text-xs font-medium text-black/60 dark:text-white/60">
-                  {f.label}
-                  {f.required && <span className="text-red-500"> *</span>}
-                </span>
-                <select
-                  value={mapping[f.key] ?? ""}
-                  onChange={(e) =>
-                    setMapping({ ...mapping, [f.key]: e.target.value })
-                  }
-                  className={inputCls}
-                >
-                  <option value="" className="bg-background text-foreground">
-                    — none —
-                  </option>
-                  {columns.map((c) => (
-                    <option key={c} value={c} className="bg-background text-foreground">
-                      {c}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            ))}
-            <label className="block">
-              <span className="mb-1 block text-xs font-medium text-black/60 dark:text-white/60">
-                Source for all imported rows
+          {aiOk ? (
+            <div className="rounded-lg border border-sky-400/30 bg-sky-50 px-4 py-3 text-sm dark:bg-sky-950/20">
+              <p className="font-medium">✨ Claude read your file</p>
+              {aiReasoning && (
+                <p className="mt-1 text-black/60 dark:text-white/60">
+                  {aiReasoning}
+                </p>
+              )}
+            </div>
+          ) : (
+            <div className="rounded-lg border border-amber-400/40 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:bg-amber-950/30 dark:text-amber-200">
+              Couldn&apos;t reach Claude to interpret this file — I&apos;ve
+              auto-matched the columns as best I can. Check the mapping below.
+            </div>
+          )}
+
+          {/* Detected mapping */}
+          <div>
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-medium uppercase tracking-wide text-black/45 dark:text-white/45">
+                Detected columns
               </span>
-              <Select
-                value={defaultSource}
-                onChange={setDefaultSource}
-                options={[...SOURCES]}
-              />
-            </label>
+              <button
+                onClick={() => setShowManual((s) => !s)}
+                className="text-xs text-black/50 underline hover:text-black dark:text-white/50 dark:hover:text-white"
+              >
+                {showManual ? "done" : "adjust"}
+              </button>
+            </div>
+
+            {!showManual ? (
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                {MAP_FIELDS.map((f) => (
+                  <span
+                    key={f.key}
+                    className="inline-flex items-center gap-1 rounded-full border border-black/10 bg-black/[0.03] px-2.5 py-1 text-xs dark:border-white/15 dark:bg-white/[0.04]"
+                  >
+                    <span className="text-black/45 dark:text-white/45">
+                      {f.label}:
+                    </span>
+                    <strong
+                      className={
+                        mapping[f.key] ? "" : "text-black/30 dark:text-white/30"
+                      }
+                    >
+                      {mapping[f.key] || "—"}
+                    </strong>
+                  </span>
+                ))}
+                <span className="inline-flex items-center gap-1 rounded-full border border-black/10 bg-black/[0.03] px-2.5 py-1 text-xs dark:border-white/15 dark:bg-white/[0.04]">
+                  <span className="text-black/45 dark:text-white/45">
+                    Source:
+                  </span>
+                  <strong>{defaultSource}</strong>
+                </span>
+              </div>
+            ) : (
+              <div className="mt-2 grid grid-cols-1 gap-3 sm:grid-cols-2">
+                {MAP_FIELDS.map((f) => (
+                  <label key={f.key} className="block">
+                    <span className="mb-1 block text-xs font-medium text-black/60 dark:text-white/60">
+                      {f.label}
+                      {f.required && <span className="text-red-500"> *</span>}
+                    </span>
+                    <select
+                      value={mapping[f.key] ?? ""}
+                      onChange={(e) =>
+                        setMapping({ ...mapping, [f.key]: e.target.value })
+                      }
+                      className={inputCls}
+                    >
+                      <option value="" className="bg-background text-foreground">
+                        — none —
+                      </option>
+                      {columns.map((c) => (
+                        <option
+                          key={c}
+                          value={c}
+                          className="bg-background text-foreground"
+                        >
+                          {c}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                ))}
+                <label className="block">
+                  <span className="mb-1 block text-xs font-medium text-black/60 dark:text-white/60">
+                    Source for all imported rows
+                  </span>
+                  <Select
+                    value={defaultSource}
+                    onChange={setDefaultSource}
+                    options={[...SOURCES]}
+                  />
+                </label>
+              </div>
+            )}
           </div>
+
+          {/* Preview of the first few interpreted rows */}
+          {built.valid.length > 0 && (
+            <div className="overflow-x-auto rounded-lg border border-black/10 dark:border-white/15">
+              <table className="w-full min-w-[480px] text-left text-xs">
+                <thead className="border-b border-black/10 uppercase tracking-wide text-black/40 dark:border-white/15 dark:text-white/40">
+                  <tr>
+                    <th className="px-3 py-2 font-medium">Subject</th>
+                    <th className="px-3 py-2 font-medium">To</th>
+                    <th className="px-3 py-2 font-medium">Sent</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {built.valid.slice(0, 3).map((r, i) => (
+                    <tr
+                      key={i}
+                      className="border-b border-black/5 last:border-0 dark:border-white/10"
+                    >
+                      <td className="px-3 py-2">{r.subject}</td>
+                      <td className="px-3 py-2">{r.sentTo}</td>
+                      <td className="px-3 py-2 whitespace-nowrap">
+                        {new Date(r.sentDate).toLocaleDateString(undefined, {
+                          day: "2-digit",
+                          month: "short",
+                          year: "numeric",
+                          timeZone: "UTC",
+                        })}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
 
           {missingRequired.length > 0 ? (
             <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-700 dark:bg-amber-950/30 dark:text-amber-300">
-              Map the required fields to continue:{" "}
-              {missingRequired.map((f) => f.label).join(", ")}.
+              Couldn&apos;t match the required fields (
+              {missingRequired.map((f) => f.label).join(", ")}). Click
+              &ldquo;adjust&rdquo; to set them.
             </p>
           ) : (
             <p className="text-xs text-black/55 dark:text-white/55">
@@ -871,8 +1064,8 @@ function ImportModal({
               {built.skipped > 0 && (
                 <>
                   {" "}
-                  · {built.skipped} will be skipped (missing subject, recipient,
-                  or an unreadable date)
+                  · {built.skipped} skipped (missing subject, recipient, or an
+                  unreadable date)
                 </>
               )}
               .
