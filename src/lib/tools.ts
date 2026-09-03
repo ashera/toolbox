@@ -57,6 +57,14 @@ export const tools: Tool[] = [
     icon: "🧾",
     category: "Finance",
   },
+  {
+    slug: "correspondence",
+    name: "Correspondence Tracker",
+    description:
+      "Log the emails and Aconex mail you send and never forget to follow up — it flags anything awaiting a reply past your deadline. Import a register via CSV or add items by hand.",
+    icon: "📮",
+    category: "Work",
+  },
 ];
 
 /** Look up a single tool by its slug (used by tool pages for their header). */

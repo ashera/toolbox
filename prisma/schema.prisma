@@ -45,3 +45,25 @@ model ExpenseItem {
   reimbursed     Boolean  @default(false) // if true, nothing is claimable
   createdAt      DateTime @default(now())
 }
+
+// ── "Correspondence Tracker" tool ──────────────────────────────────────
+// One row per item of correspondence sent (Aconex mail or Outlook email),
+// so we can track whether the recipient has responded. Metadata only — we
+// deliberately don't store message bodies.
+model Correspondence {
+  id               String    @id @default(cuid())
+  source           String    @default("Email") // "Aconex" | "Email" | "Other"
+  reference        String? // Aconex mail no., doc ref, etc.
+  subject          String
+  sentTo           String // contractor / client the item went to
+  sentDate         DateTime
+  responseNeededBy DateTime? // optional explicit due date
+  status           String    @default("Awaiting") // "Awaiting" | "Responded" | "Closed"
+  respondedDate    DateTime?
+  link             String? // deep link back to the Aconex mail / Outlook thread
+  notes            String?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  @@index([status, sentDate])
+}
