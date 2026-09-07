@@ -32,9 +32,15 @@ export default function CorrespondenceApp({
 }: {
   items: CorrespondenceDTO[];
 }) {
+  type SortKey = "default" | "sent" | "wait" | "to" | "subject" | "status";
   const [threshold, setThreshold] = useState(DEFAULT_THRESHOLD_WD);
   const [filter, setFilter] = useState<DisplayStatus | "All">("All");
   const [query, setQuery] = useState("");
+  const [dateRange, setDateRange] = useState<"all" | "7" | "14" | "30" | "90">(
+    "all",
+  );
+  const [sortKey, setSortKey] = useState<SortKey>("default");
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
   const [showAdd, setShowAdd] = useState(false);
   const [showImport, setShowImport] = useState(false);
   const [confirmClear, setConfirmClear] = useState(false);
@@ -94,8 +100,16 @@ export default function CorrespondenceApp({
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
+    const cutoff =
+      dateRange === "all" ? null : Date.now() - Number(dateRange) * 86400000;
+    const rank = (d: DisplayStatus) =>
+      d === "Overdue" ? 0 : d === "Awaiting" ? 1 : d === "Responded" ? 2 : 3;
+    const dir = sortDir === "asc" ? 1 : -1;
     return withStatus
       .filter((x) => filter === "All" || x.ds === filter)
+      .filter(
+        (x) => cutoff === null || new Date(x.item.sentDate).getTime() >= cutoff,
+      )
       .filter(
         (x) =>
           !q ||
@@ -104,13 +118,56 @@ export default function CorrespondenceApp({
           (x.item.reference ?? "").toLowerCase().includes(q),
       )
       .sort((a, b) => {
-        // Overdue first, then longest-waiting, keeping resolved items last.
-        const rank = (d: DisplayStatus) =>
-          d === "Overdue" ? 0 : d === "Awaiting" ? 1 : d === "Responded" ? 2 : 3;
-        if (rank(a.ds) !== rank(b.ds)) return rank(a.ds) - rank(b.ds);
-        return b.wait - a.wait;
+        switch (sortKey) {
+          case "sent":
+            return (
+              dir *
+              (new Date(a.item.sentDate).getTime() -
+                new Date(b.item.sentDate).getTime())
+            );
+          case "wait":
+            return dir * (a.wait - b.wait);
+          case "to":
+            return dir * a.item.sentTo.localeCompare(b.item.sentTo);
+          case "subject":
+            return dir * a.item.subject.localeCompare(b.item.subject);
+          case "status":
+            return dir * (rank(a.ds) - rank(b.ds));
+          default:
+            // Smart default: overdue first, then longest-waiting.
+            if (rank(a.ds) !== rank(b.ds)) return rank(a.ds) - rank(b.ds);
+            return b.wait - a.wait;
+        }
       });
-  }, [withStatus, filter, query]);
+  }, [withStatus, filter, query, dateRange, sortKey, sortDir]);
+
+  // Header clicks cycle: primary direction -> opposite -> back to smart default.
+  function toggleSort(key: SortKey) {
+    const primary = key === "to" || key === "subject" ? "asc" : "desc";
+    if (sortKey !== key) {
+      setSortKey(key);
+      setSortDir(primary);
+    } else if (sortDir === primary) {
+      setSortDir(primary === "asc" ? "desc" : "asc");
+    } else {
+      setSortKey("default");
+    }
+  }
+
+  const sortTh = (label: string, k: SortKey, right = false) => (
+    <th className={`px-4 py-3 font-medium ${right ? "text-right" : ""}`}>
+      <button
+        type="button"
+        onClick={() => toggleSort(k)}
+        className="inline-flex items-center gap-1 transition-colors hover:text-black dark:hover:text-white"
+      >
+        {label}
+        <span className="text-[10px] opacity-50">
+          {sortKey === k ? (sortDir === "asc" ? "▲" : "▼") : "↕"}
+        </span>
+      </button>
+    </th>
+  );
 
   function run(fn: () => Promise<unknown>) {
     setError(null);
@@ -204,12 +261,36 @@ export default function CorrespondenceApp({
             ),
           )}
         </div>
-        <input
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder="Search subject, recipient, ref…"
-          className="w-full max-w-xs rounded-lg border border-black/15 bg-transparent px-3 py-1.5 text-sm outline-none focus:border-black/40 dark:border-white/20 dark:focus:border-white/50"
-        />
+        <div className="flex items-center gap-2">
+          <select
+            value={dateRange}
+            onChange={(e) => setDateRange(e.target.value as typeof dateRange)}
+            className="rounded-lg border border-black/15 bg-transparent px-3 py-1.5 text-sm outline-none focus:border-black/40 dark:border-white/20 dark:focus:border-white/50"
+            title="Filter by sent date"
+          >
+            <option value="all" className="bg-background text-foreground">
+              All dates
+            </option>
+            <option value="7" className="bg-background text-foreground">
+              Sent: last 7 days
+            </option>
+            <option value="14" className="bg-background text-foreground">
+              Sent: last 2 weeks
+            </option>
+            <option value="30" className="bg-background text-foreground">
+              Sent: last 30 days
+            </option>
+            <option value="90" className="bg-background text-foreground">
+              Sent: last 90 days
+            </option>
+          </select>
+          <input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search subject, recipient, ref…"
+            className="w-full max-w-xs rounded-lg border border-black/15 bg-transparent px-3 py-1.5 text-sm outline-none focus:border-black/40 dark:border-white/20 dark:focus:border-white/50"
+          />
+        </div>
       </div>
 
       {/* Table / empty state */}
@@ -227,11 +308,11 @@ export default function CorrespondenceApp({
           <table className="w-full min-w-[720px] text-left text-sm">
             <thead className="border-b border-black/10 text-xs uppercase tracking-wide text-black/40 dark:border-white/15 dark:text-white/40">
               <tr>
-                <th className="px-4 py-3 font-medium">Status</th>
-                <th className="px-4 py-3 font-medium">Correspondence</th>
-                <th className="px-4 py-3 font-medium">To</th>
-                <th className="px-4 py-3 font-medium">Sent</th>
-                <th className="px-4 py-3 font-medium">Waiting</th>
+                {sortTh("Status", "status")}
+                {sortTh("Correspondence", "subject")}
+                {sortTh("To", "to")}
+                {sortTh("Sent", "sent")}
+                {sortTh("Waiting", "wait")}
                 <th className="px-4 py-3 text-right font-medium">Actions</th>
               </tr>
             </thead>
