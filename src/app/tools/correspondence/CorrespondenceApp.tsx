@@ -699,33 +699,85 @@ function cellToStr(c: unknown): string {
   return String(c).trim();
 }
 
-async function parseSpreadsheet(
-  file: File,
-): Promise<{ headers: string[]; data: Record<string, string>[] }> {
-  const name = file.name.toLowerCase();
-  if (name.endsWith(".xlsx") || name.endsWith(".xls")) {
-    const matrix = (await readXlsxFile(file)) as unknown as unknown[][];
-    const headerRow = matrix[0] ?? [];
-    const headers = headerRow.map((c, i) => cellToStr(c) || `Column ${i + 1}`);
-    const data = matrix.slice(1).map((r) => {
+function nonEmpty(c: unknown): boolean {
+  return cellToStr(c) !== "";
+}
+
+// read-excel-file's default export resolves to an array of sheet objects
+// ([{ sheet, data }]); older versions returned rows directly. Normalise both
+// to a plain matrix of rows (using the first sheet).
+function toRowMatrix(result: unknown): unknown[][] {
+  if (!Array.isArray(result) || result.length === 0) return [];
+  const first = result[0];
+  if (Array.isArray(first)) return result as unknown[][];
+  if (first && typeof first === "object" && Array.isArray((first as { data?: unknown[] }).data))
+    return (first as { data: unknown[][] }).data;
+  return [];
+}
+
+// Aconex (and many) exports put title / project / filter rows ABOVE the real
+// column headers. Those preamble rows have few filled cells, so we treat the
+// fullest row (earliest on a tie) among the first several as the header row.
+function detectHeaderRow(matrix: unknown[][]): number {
+  const scan = Math.min(matrix.length, 15);
+  let bestIdx = 0;
+  let bestCount = -1;
+  for (let i = 0; i < scan; i++) {
+    const count = matrix[i].filter(nonEmpty).length;
+    if (count > bestCount) {
+      bestCount = count;
+      bestIdx = i;
+    }
+  }
+  return bestIdx;
+}
+
+// Turn a raw row matrix into { headers, objects }, skipping preamble rows,
+// de-duplicating header names, and dropping blank rows.
+function matrixToRows(matrix: unknown[][]): {
+  headers: string[];
+  data: Record<string, string>[];
+} {
+  if (matrix.length === 0) return { headers: [], data: [] };
+  const headerIdx = detectHeaderRow(matrix);
+  const seen = new Map<string, number>();
+  const headers = (matrix[headerIdx] ?? []).map((c, i) => {
+    let h = cellToStr(c) || `Column ${i + 1}`;
+    const n = seen.get(h) ?? 0;
+    seen.set(h, n + 1);
+    if (n > 0) h = `${h} (${n + 1})`;
+    return h;
+  });
+  const data = matrix
+    .slice(headerIdx + 1)
+    .filter((r) => Array.isArray(r) && r.some(nonEmpty))
+    .map((r) => {
       const obj: Record<string, string> = {};
       headers.forEach((h, i) => {
         obj[h] = cellToStr(r[i]);
       });
       return obj;
     });
-    return { headers, data };
+  return { headers, data };
+}
+
+async function parseSpreadsheet(
+  file: File,
+): Promise<{ headers: string[]; data: Record<string, string>[] }> {
+  const name = file.name.toLowerCase();
+  if (name.endsWith(".xlsx") || name.endsWith(".xls")) {
+    const matrix = toRowMatrix(await readXlsxFile(file));
+    if (matrix.length === 0)
+      throw new Error(
+        "Couldn't read that spreadsheet. If it's an old .xls file, re-save it as .xlsx or CSV and try again.",
+      );
+    return matrixToRows(matrix);
   }
+  // CSV: parse WITHOUT a header row so we can skip preamble rows the same way.
   return new Promise((resolve, reject) => {
-    Papa.parse<Record<string, string>>(file, {
-      header: true,
+    Papa.parse<string[]>(file, {
       skipEmptyLines: "greedy",
-      transformHeader: (h) => h.trim(),
-      complete: (res) =>
-        resolve({
-          headers: (res.meta.fields ?? []).filter(Boolean),
-          data: res.data,
-        }),
+      complete: (res) => resolve(matrixToRows(res.data as unknown[][])),
       error: (err) => reject(err),
     });
   });
