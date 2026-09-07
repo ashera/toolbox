@@ -14,7 +14,6 @@ import {
   parseFlexibleDate,
 } from "@/lib/correspondence";
 import {
-  createCorrespondence,
   importCorrespondences,
   markResponded,
   reopenCorrespondence,
@@ -41,7 +40,6 @@ export default function CorrespondenceApp({
   );
   const [sortKey, setSortKey] = useState<SortKey>("default");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
-  const [showAdd, setShowAdd] = useState(false);
   const [showImport, setShowImport] = useState(false);
   const [confirmClear, setConfirmClear] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -186,14 +184,8 @@ export default function CorrespondenceApp({
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex gap-2">
           <button
-            onClick={() => setShowAdd(true)}
-            className="rounded-lg bg-foreground px-4 py-2 text-sm font-medium text-background transition-opacity hover:opacity-80"
-          >
-            + Log correspondence
-          </button>
-          <button
             onClick={() => setShowImport(true)}
-            className="rounded-lg border border-black/15 px-4 py-2 text-sm font-medium transition-colors hover:border-black/40 dark:border-white/20 dark:hover:border-white/50"
+            className="rounded-lg bg-brand px-4 py-2 text-sm font-medium text-brand-fg shadow-sm transition-opacity hover:opacity-90"
           >
             ⬆ Import file
           </button>
@@ -252,8 +244,8 @@ export default function CorrespondenceApp({
                 onClick={() => setFilter(f)}
                 className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
                   filter === f
-                    ? "bg-foreground text-background"
-                    : "border border-black/15 text-black/60 hover:border-black/40 dark:border-white/20 dark:text-white/60"
+                    ? "bg-brand text-brand-fg"
+                    : "border border-black/15 text-black/60 hover:border-brand hover:text-brand dark:border-white/20 dark:text-white/60"
                 }`}
               >
                 {f} <span className="opacity-60">{counts[f] ?? 0}</span>
@@ -295,10 +287,7 @@ export default function CorrespondenceApp({
 
       {/* Table / empty state */}
       {items.length === 0 ? (
-        <EmptyState
-          onAdd={() => setShowAdd(true)}
-          onImport={() => setShowImport(true)}
-        />
+        <EmptyState onImport={() => setShowImport(true)} />
       ) : filtered.length === 0 ? (
         <p className="rounded-lg border border-dashed border-black/15 py-10 text-center text-sm text-black/40 dark:border-white/20 dark:text-white/40">
           Nothing matches this view.
@@ -382,18 +371,6 @@ export default function CorrespondenceApp({
         </div>
       )}
 
-      {showAdd && (
-        <AddModal
-          onClose={() => setShowAdd(false)}
-          onSubmit={(data) =>
-            run(async () => {
-              await createCorrespondence(data);
-              setShowAdd(false);
-            })
-          }
-          pending={pending}
-        />
-      )}
       {showImport && (
         <ImportModal
           onClose={() => setShowImport(false)}
@@ -614,31 +591,19 @@ function IconBtn({
   );
 }
 
-function EmptyState({
-  onAdd,
-  onImport,
-}: {
-  onAdd: () => void;
-  onImport: () => void;
-}) {
+function EmptyState({ onImport }: { onImport: () => void }) {
   return (
-    <div className="rounded-2xl border border-dashed border-black/15 py-14 text-center dark:border-white/20">
+    <div className="rounded-2xl border border-dashed border-brand/30 bg-brand-soft/40 py-14 text-center">
       <div className="text-4xl">📮</div>
       <h3 className="mt-3 font-semibold">No correspondence tracked yet</h3>
       <p className="mx-auto mt-1 max-w-sm text-sm text-black/55 dark:text-white/55">
-        Log the emails and Aconex mail you send, and this dashboard will chase
-        the ones that go unanswered so you never forget to follow up.
+        Import your Aconex mail register (Excel or CSV) and this dashboard will
+        chase the ones that go unanswered so you never forget to follow up.
       </p>
-      <div className="mt-5 flex justify-center gap-2">
-        <button
-          onClick={onAdd}
-          className="rounded-lg bg-foreground px-4 py-2 text-sm font-medium text-background transition-opacity hover:opacity-80"
-        >
-          + Log your first one
-        </button>
+      <div className="mt-5 flex justify-center">
         <button
           onClick={onImport}
-          className="rounded-lg border border-black/15 px-4 py-2 text-sm font-medium transition-colors hover:border-black/40 dark:border-white/20 dark:hover:border-white/50"
+          className="rounded-lg bg-brand px-4 py-2 text-sm font-medium text-brand-fg shadow-sm transition-opacity hover:opacity-90"
         >
           ⬆ Import a file
         </button>
@@ -648,152 +613,7 @@ function EmptyState({
 }
 
 // ─────────────────────────────────────────────────────────────────────────
-//  Manual-entry modal
-// ─────────────────────────────────────────────────────────────────────────
-function AddModal({
-  onClose,
-  onSubmit,
-  pending,
-}: {
-  onClose: () => void;
-  onSubmit: (data: NewCorrespondence) => void;
-  pending: boolean;
-}) {
-  const today = new Date().toISOString().slice(0, 10);
-  const [source, setSource] = useState<string>("Email");
-  const [subject, setSubject] = useState("");
-  const [sentTo, setSentTo] = useState("");
-  const [sentDate, setSentDate] = useState(today);
-  const [reference, setReference] = useState("");
-  const [responseNeededBy, setResponseNeededBy] = useState("");
-  const [link, setLink] = useState("");
-  const [summary, setSummary] = useState("");
-  const [notes, setNotes] = useState("");
-
-  const valid = subject.trim() && sentTo.trim() && sentDate;
-
-  return (
-    <Modal onClose={onClose} title="Log correspondence">
-      <form
-        onSubmit={(e) => {
-          e.preventDefault();
-          if (!valid) return;
-          onSubmit({
-            source,
-            subject,
-            sentTo,
-            sentDate: new Date(sentDate).toISOString(),
-            reference: reference || null,
-            responseNeededBy: responseNeededBy
-              ? new Date(responseNeededBy).toISOString()
-              : null,
-            link: link || null,
-            summary: summary || null,
-            notes: notes || null,
-          });
-        }}
-        className="space-y-4"
-      >
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <ModalField label="Source">
-            <Select value={source} onChange={setSource} options={[...SOURCES]} />
-          </ModalField>
-          <ModalField label="Sent date *">
-            <input
-              type="date"
-              value={sentDate}
-              onChange={(e) => setSentDate(e.target.value)}
-              className={inputCls}
-              required
-            />
-          </ModalField>
-        </div>
-        <ModalField label="Subject *">
-          <input
-            value={subject}
-            onChange={(e) => setSubject(e.target.value)}
-            placeholder="e.g. RFI-042 – Slab penetration coordination"
-            className={inputCls}
-            required
-          />
-        </ModalField>
-        <ModalField label="Summary (optional)">
-          <input
-            value={summary}
-            onChange={(e) => setSummary(e.target.value)}
-            placeholder="Short plain-English gist of what it's about"
-            className={inputCls}
-          />
-        </ModalField>
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <ModalField label="Sent to *">
-            <input
-              value={sentTo}
-              onChange={(e) => setSentTo(e.target.value)}
-              placeholder="Contractor / client"
-              className={inputCls}
-              required
-            />
-          </ModalField>
-          <ModalField label="Reference / No.">
-            <input
-              value={reference}
-              onChange={(e) => setReference(e.target.value)}
-              placeholder="Aconex mail no., doc ref…"
-              className={inputCls}
-            />
-          </ModalField>
-        </div>
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <ModalField label="Response needed by (optional)">
-            <input
-              type="date"
-              value={responseNeededBy}
-              onChange={(e) => setResponseNeededBy(e.target.value)}
-              className={inputCls}
-            />
-          </ModalField>
-          <ModalField label="Link (optional)">
-            <input
-              value={link}
-              onChange={(e) => setLink(e.target.value)}
-              placeholder="https://…"
-              className={inputCls}
-            />
-          </ModalField>
-        </div>
-        <ModalField label="Notes (optional)">
-          <textarea
-            value={notes}
-            onChange={(e) => setNotes(e.target.value)}
-            rows={2}
-            className={inputCls}
-          />
-        </ModalField>
-
-        <div className="flex justify-end gap-2 pt-2">
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-lg px-4 py-2 text-sm font-medium text-black/60 hover:text-black dark:text-white/60 dark:hover:text-white"
-          >
-            Cancel
-          </button>
-          <button
-            type="submit"
-            disabled={!valid || pending}
-            className="rounded-lg bg-foreground px-4 py-2 text-sm font-medium text-background transition-opacity hover:opacity-80 disabled:opacity-40"
-          >
-            {pending ? "Saving…" : "Save"}
-          </button>
-        </div>
-      </form>
-    </Modal>
-  );
-}
-
-// ─────────────────────────────────────────────────────────────────────────
-//  CSV import modal (drag & drop + column mapping)
+//  CSV / Excel import modal (drag & drop + AI column detection)
 // ─────────────────────────────────────────────────────────────────────────
 type MapTarget = "subject" | "details" | "sentTo" | "sentDate" | "reference" | "status" | "link" | "notes";
 
@@ -1371,7 +1191,7 @@ function ImportModal({
                 summarizing
               }
               onClick={doImport}
-              className="rounded-lg bg-foreground px-4 py-2 text-sm font-medium text-background transition-opacity hover:opacity-80 disabled:opacity-40"
+              className="rounded-lg bg-brand px-4 py-2 text-sm font-medium text-brand-fg transition-opacity hover:opacity-90 disabled:opacity-40"
             >
               {summarizing
                 ? "Summarising…"
@@ -1427,23 +1247,6 @@ function Modal({
         {children}
       </div>
     </div>
-  );
-}
-
-function ModalField({
-  label,
-  children,
-}: {
-  label: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <label className="block">
-      <span className="mb-1 block text-sm font-medium text-black/70 dark:text-white/70">
-        {label}
-      </span>
-      {children}
-    </label>
   );
 }
 

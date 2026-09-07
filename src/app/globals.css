@@ -3,19 +3,32 @@
 :root {
   --background: #ffffff;
   --foreground: #171717;
+  /* Aconex-inspired orange accent */
+  --brand: #dd5b1a; /* readable with white text */
+  --brand-fg: #ffffff; /* text/icon colour on a brand fill */
+  --brand-soft: #fff2e9; /* light tint for chips/hero backgrounds */
+  --brand-ring: #f0803a; /* brighter orange for borders/rings */
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
+  --color-brand: var(--brand);
+  --color-brand-fg: var(--brand-fg);
+  --color-brand-soft: var(--brand-soft);
+  --color-brand-ring: var(--brand-ring);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --background: #0a0a0a;
+    --background: #0f0d0b;
     --foreground: #ededed;
+    --brand: #f0803a; /* lighter orange reads better on dark */
+    --brand-fg: #1a1200; /* dark text on the lighter fill */
+    --brand-soft: #26170d; /* warm dark tint */
+    --brand-ring: #f0803a;
   }
 }
 

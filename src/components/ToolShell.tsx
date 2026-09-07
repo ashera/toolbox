@@ -26,7 +26,9 @@ export default function ToolShell({
       </Link>
 
       <div className="mt-6 flex items-start gap-4">
-        <span className="text-4xl">{tool?.icon ?? "🛠️"}</span>
+        <span className="grid h-14 w-14 shrink-0 place-items-center rounded-2xl bg-brand-soft text-3xl ring-1 ring-brand/20">
+          {tool?.icon ?? "🛠️"}
+        </span>
         <div>
           <h1 className="text-2xl font-semibold">{tool?.name ?? slug}</h1>
           {tool?.description && (
@@ -37,7 +39,9 @@ export default function ToolShell({
         </div>
       </div>
 
-      <div className="mt-8">{children}</div>
+      <div className="mt-6 h-px bg-gradient-to-r from-brand/40 to-transparent" />
+
+      <div className="mt-6">{children}</div>
     </main>
   );
 }
