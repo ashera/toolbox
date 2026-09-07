@@ -305,11 +305,12 @@ export default function CorrespondenceApp({
         </p>
       ) : (
         <div className="overflow-x-auto rounded-xl border border-black/10 dark:border-white/15">
-          <table className="w-full min-w-[720px] text-left text-sm">
+          <table className="w-full min-w-[880px] text-left text-sm">
             <thead className="border-b border-black/10 text-xs uppercase tracking-wide text-black/40 dark:border-white/15 dark:text-white/40">
               <tr>
                 {sortTh("Status", "status")}
                 {sortTh("Correspondence", "subject")}
+                <th className="px-4 py-3 font-medium">Summary</th>
                 {sortTh("To", "to")}
                 {sortTh("Sent", "sent")}
                 {sortTh("Waiting", "wait")}
@@ -341,6 +342,18 @@ export default function CorrespondenceApp({
                         </a>
                       )}
                     </div>
+                  </td>
+                  <td className="px-4 py-3 align-top">
+                    {item.summary ? (
+                      <span
+                        className="block max-w-[260px] text-black/70 dark:text-white/70"
+                        title={item.summary}
+                      >
+                        {item.summary}
+                      </span>
+                    ) : (
+                      <span className="text-black/30 dark:text-white/30">—</span>
+                    )}
                   </td>
                   <td className="px-4 py-3 align-top text-black/70 dark:text-white/70">
                     {item.sentTo}
@@ -654,6 +667,7 @@ function AddModal({
   const [reference, setReference] = useState("");
   const [responseNeededBy, setResponseNeededBy] = useState("");
   const [link, setLink] = useState("");
+  const [summary, setSummary] = useState("");
   const [notes, setNotes] = useState("");
 
   const valid = subject.trim() && sentTo.trim() && sentDate;
@@ -674,6 +688,7 @@ function AddModal({
               ? new Date(responseNeededBy).toISOString()
               : null,
             link: link || null,
+            summary: summary || null,
             notes: notes || null,
           });
         }}
@@ -700,6 +715,14 @@ function AddModal({
             placeholder="e.g. RFI-042 – Slab penetration coordination"
             className={inputCls}
             required
+          />
+        </ModalField>
+        <ModalField label="Summary (optional)">
+          <input
+            value={summary}
+            onChange={(e) => setSummary(e.target.value)}
+            placeholder="Short plain-English gist of what it's about"
+            className={inputCls}
           />
         </ModalField>
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -772,10 +795,11 @@ function AddModal({
 // ─────────────────────────────────────────────────────────────────────────
 //  CSV import modal (drag & drop + column mapping)
 // ─────────────────────────────────────────────────────────────────────────
-type MapTarget = "subject" | "sentTo" | "sentDate" | "reference" | "status" | "link" | "notes";
+type MapTarget = "subject" | "details" | "sentTo" | "sentDate" | "reference" | "status" | "link" | "notes";
 
 const MAP_FIELDS: { key: MapTarget; label: string; required: boolean; hints: string[] }[] = [
-  { key: "subject", label: "Subject", required: true, hints: ["subject", "title", "description", "document title"] },
+  { key: "subject", label: "Subject", required: true, hints: ["subject", "title", "documenttitle"] },
+  { key: "details", label: "Details / body", required: false, hints: ["description", "details", "body", "content", "message", "scope", "particulars"] },
   { key: "sentTo", label: "Sent to", required: true, hints: ["to", "recipient", "attention", "attn", "toorganization", "toorganisation", "sentto", "tocompany"] },
   { key: "sentDate", label: "Sent date", required: true, hints: ["sentdate", "datesent", "sent", "issued", "dateissued", "date", "createddate"] },
   { key: "reference", label: "Reference / No.", required: false, hints: ["mailno", "docno", "documentno", "reference", "ref", "number", "no", "correspondenceno"] },
@@ -936,6 +960,8 @@ function ImportModal({
   const [showManual, setShowManual] = useState(false);
   const [dragOver, setDragOver] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [makeSummaries, setMakeSummaries] = useState(true);
+  const [summarizing, setSummarizing] = useState(false);
 
   async function handleFile(file: File) {
     setError(null);
@@ -998,9 +1024,11 @@ function ImportModal({
     setError(null);
   }
 
-  // Build the importable rows from the current mapping.
+  // Build the importable rows from the current mapping. `sources` holds the
+  // subject + details text per valid row, used to generate summaries.
   const built = useMemo(() => {
     const valid: NewCorrespondence[] = [];
+    const sources: { subject: string; details: string }[] = [];
     let skipped = 0;
     for (const r of rows) {
       const get = (k: MapTarget) =>
@@ -1012,6 +1040,7 @@ function ImportModal({
         skipped++;
         continue;
       }
+      const details = get("details");
       valid.push({
         source: defaultSource,
         subject,
@@ -1020,15 +1049,64 @@ function ImportModal({
         reference: get("reference") || null,
         status: mapping.status ? normStatus(get("status")) : "Awaiting",
         link: get("link") || null,
+        summary: null,
         notes: get("notes") || null,
       });
+      sources.push({ subject, details });
     }
-    return { valid, skipped };
+    return { valid, sources, skipped };
   }, [rows, mapping, defaultSource]);
 
   const missingRequired = MAP_FIELDS.filter(
     (f) => f.required && !mapping[f.key],
   );
+
+  // Ask Claude for a short summary of each row, in chunks. Blanks on failure.
+  async function summarizeRows(
+    sources: { subject: string; details: string }[],
+  ) {
+    const out = new Array<string>(sources.length).fill("");
+    const CHUNK = 40;
+    for (let start = 0; start < sources.length; start += CHUNK) {
+      const chunk = sources.slice(start, start + CHUNK);
+      try {
+        const res = await fetch("/api/correspondence/summarize", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ rows: chunk }),
+        });
+        if (res.ok) {
+          const j = await res.json();
+          if (Array.isArray(j.summaries))
+            j.summaries.forEach((s: unknown, i: number) => {
+              if (typeof s === "string") out[start + i] = s.trim();
+            });
+        }
+      } catch {
+        /* leave this chunk blank */
+      }
+    }
+    return out;
+  }
+
+  async function doImport() {
+    let summaries: string[] = [];
+    if (makeSummaries) {
+      setSummarizing(true);
+      summaries = await summarizeRows(built.sources);
+      setSummarizing(false);
+    }
+    // Prefer the AI summary; fall back to the raw details text if present.
+    const rowsToImport = built.valid.map((r, i) => ({
+      ...r,
+      summary:
+        (summaries[i] || "").trim() ||
+        (built.sources[i].details
+          ? built.sources[i].details.slice(0, 140)
+          : null),
+    }));
+    onImport(rowsToImport);
+  }
 
   return (
     <Modal onClose={onClose} title="Import correspondence" wide>
@@ -1245,6 +1323,19 @@ function ImportModal({
             </div>
           )}
 
+          <label className="flex items-start gap-2 text-xs text-black/60 dark:text-white/60">
+            <input
+              type="checkbox"
+              checked={makeSummaries}
+              onChange={(e) => setMakeSummaries(e.target.checked)}
+              className="mt-0.5"
+            />
+            <span>
+              ✨ Generate a short plain-English summary for each item with Claude
+              (needs the API key; otherwise a details column is used as-is).
+            </span>
+          </label>
+
           {missingRequired.length > 0 ? (
             <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-700 dark:bg-amber-950/30 dark:text-amber-300">
               Couldn&apos;t match the required fields (
@@ -1276,12 +1367,17 @@ function ImportModal({
               disabled={
                 missingRequired.length > 0 ||
                 built.valid.length === 0 ||
-                pending
+                pending ||
+                summarizing
               }
-              onClick={() => onImport(built.valid)}
+              onClick={doImport}
               className="rounded-lg bg-foreground px-4 py-2 text-sm font-medium text-background transition-opacity hover:opacity-80 disabled:opacity-40"
             >
-              {pending ? "Importing…" : `Import ${built.valid.length}`}
+              {summarizing
+                ? "Summarising…"
+                : pending
+                  ? "Importing…"
+                  : `Import ${built.valid.length}`}
             </button>
           </div>
         </div>

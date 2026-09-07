@@ -49,6 +49,7 @@ export default async function CorrespondencePage() {
       status: r.status,
       respondedDate: r.respondedDate?.toISOString() ?? null,
       link: r.link,
+      summary: r.summary,
       notes: r.notes,
     }));
   } catch (error) {

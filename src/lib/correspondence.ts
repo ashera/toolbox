@@ -12,6 +12,7 @@ export type CorrespondenceDTO = {
   status: string; // "Awaiting" | "Responded" | "Closed"
   respondedDate: string | null; // ISO string
   link: string | null;
+  summary: string | null;
   notes: string | null;
 };
 
@@ -27,6 +28,7 @@ export type NewCorrespondence = {
   responseNeededBy?: string | null; // ISO
   status?: string;
   link?: string | null;
+  summary?: string | null;
   notes?: string | null;
 };
 

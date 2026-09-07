@@ -28,6 +28,7 @@ export async function createCorrespondence(data: NewCorrespondence) {
         : null,
       status: data.status || "Awaiting",
       link: clean(data.link),
+      summary: clean(data.summary),
       notes: clean(data.notes),
     },
   });
@@ -47,6 +48,7 @@ export async function importCorrespondences(rows: NewCorrespondence[]) {
       responseNeededBy: r.responseNeededBy ? new Date(r.responseNeededBy) : null,
       status: r.status || "Awaiting",
       link: clean(r.link),
+      summary: clean(r.summary),
       notes: clean(r.notes),
     }));
 

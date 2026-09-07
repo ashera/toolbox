@@ -9,7 +9,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
 
-const FIELDS = ["subject", "sentTo", "sentDate", "reference", "status", "link", "notes"] as const;
+const FIELDS = ["subject", "details", "sentTo", "sentDate", "reference", "status", "link", "notes"] as const;
 
 // Every field is a plain string (empty "" means "no column fits"). We avoid
 // nullable types so the schema stays within strict structured-output support.
@@ -36,7 +36,8 @@ const SYSTEM = `You map spreadsheet columns to fields for a construction project
 Given the column headers and a few sample rows, decide which header best fills each target field. Return the EXACT header string, or an empty string "" if no column fits.
 
 Target fields:
-- subject: the main topic/title/description of the correspondence
+- subject: the main topic/title of the correspondence (a short line)
+- details: a longer description, body, scope, or comments column with more text about the item, if present (distinct from the short subject)
 - sentTo: the recipient — the company or person it was sent TO (not the sender/from)
 - sentDate: the date it was sent or issued
 - reference: the mail number, document number, or unique reference

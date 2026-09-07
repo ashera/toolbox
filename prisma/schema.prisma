@@ -61,6 +61,7 @@ model Correspondence {
   status           String    @default("Awaiting") // "Awaiting" | "Responded" | "Closed"
   respondedDate    DateTime?
   link             String? // deep link back to the Aconex mail / Outlook thread
+  summary          String? // short plain-English gist of what the item is about
   notes            String?
   createdAt        DateTime  @default(now())
   updatedAt        DateTime  @updatedAt
