@@ -59,11 +59,11 @@ export const tools: Tool[] = [
   },
   {
     slug: "correspondence",
-    name: "Correspondence Tracker",
+    name: "Chaser",
     description:
-      "Log the emails and Aconex mail you send and never forget to follow up — it flags anything awaiting a reply past your deadline. Drop in an Excel/CSV register and Claude reads the columns for you, or add items by hand.",
+      "Never lose track of a reply. Drop in your Aconex or email register and Chaser flags every item still awaiting a response past your deadline.",
     icon: "📮",
-    category: "Work",
+    category: "Comms",
   },
 ];
 

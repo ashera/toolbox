@@ -66,24 +66,54 @@ export default async function Home() {
       </section>
 
       <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        {tools.map((tool) => (
+        {tools.map((tool) => {
+          const featured = tool.slug === "correspondence";
+          return (
           <Link
             key={tool.slug}
             href={`/tools/${tool.slug}`}
-            className="group rounded-xl border border-black/10 p-5 transition-all hover:-translate-y-0.5 hover:border-brand hover:shadow-md hover:shadow-brand/10 dark:border-white/15"
+            className={
+              featured
+                ? "group relative overflow-hidden rounded-xl p-5 text-white shadow-md shadow-brand/25 transition-all hover:-translate-y-0.5 hover:shadow-lg bg-gradient-to-br from-[#f2903f] to-[#d9531a]"
+                : "group rounded-xl border border-black/10 p-5 transition-all hover:-translate-y-0.5 hover:border-brand hover:shadow-md hover:shadow-brand/10 dark:border-white/15"
+            }
           >
             <div className="flex items-center justify-between">
-              <span className="grid h-11 w-11 place-items-center rounded-xl bg-brand-soft text-2xl ring-1 ring-brand/15">
+              <span
+                className={
+                  featured
+                    ? "grid h-11 w-11 place-items-center rounded-xl bg-white/20 text-2xl"
+                    : "grid h-11 w-11 place-items-center rounded-xl bg-brand-soft text-2xl ring-1 ring-brand/15"
+                }
+              >
                 {tool.icon}
               </span>
-              <span className="rounded-full bg-brand-soft px-2.5 py-0.5 text-xs font-medium text-brand">
+              <span
+                className={
+                  featured
+                    ? "rounded-full bg-white/25 px-2.5 py-0.5 text-xs font-medium text-white"
+                    : "rounded-full bg-brand-soft px-2.5 py-0.5 text-xs font-medium text-brand"
+                }
+              >
                 {tool.category}
               </span>
             </div>
-            <h2 className="mt-4 font-semibold transition-colors group-hover:text-brand">
+            <h2
+              className={
+                featured
+                  ? "mt-4 font-semibold"
+                  : "mt-4 font-semibold transition-colors group-hover:text-brand"
+              }
+            >
               {tool.name}
             </h2>
-            <p className="mt-1 text-sm text-black/60 dark:text-white/60">
+            <p
+              className={
+                featured
+                  ? "mt-1 text-sm text-white/85"
+                  : "mt-1 text-sm text-black/60 dark:text-white/60"
+              }
+            >
               {tool.description}
             </p>
             {tool.slug === "notes" && notesStats && (
@@ -107,7 +137,8 @@ export default async function Home() {
               </p>
             )}
           </Link>
-        ))}
+          );
+        })}
       </section>
 
       {tools.length === 0 && (
