@@ -20,6 +20,7 @@ import {
   reopenCorrespondence,
   closeCorrespondence,
   deleteCorrespondence,
+  clearAllCorrespondence,
   snoozeCorrespondence,
 } from "./actions";
 
@@ -36,6 +37,7 @@ export default function CorrespondenceApp({
   const [query, setQuery] = useState("");
   const [showAdd, setShowAdd] = useState(false);
   const [showImport, setShowImport] = useState(false);
+  const [confirmClear, setConfirmClear] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
@@ -139,20 +141,34 @@ export default function CorrespondenceApp({
             ⬆ Import file
           </button>
         </div>
-        <label className="flex items-center gap-2 text-xs text-black/50 dark:text-white/50">
-          Flag overdue after
-          <select
-            value={threshold}
-            onChange={(e) => updateThreshold(Number(e.target.value))}
-            className="rounded-md border border-black/15 bg-transparent px-2 py-1 text-xs dark:border-white/20"
-          >
-            {[3, 5, 7, 10, 14].map((n) => (
-              <option key={n} value={n} className="bg-background text-foreground">
-                {n} working days
-              </option>
-            ))}
-          </select>
-        </label>
+        <div className="flex items-center gap-3">
+          {items.length > 0 && (
+            <button
+              onClick={() => setConfirmClear(true)}
+              className="text-xs text-black/40 underline transition-colors hover:text-red-500 dark:text-white/40"
+            >
+              Clear all
+            </button>
+          )}
+          <label className="flex items-center gap-2 text-xs text-black/50 dark:text-white/50">
+            Flag overdue after
+            <select
+              value={threshold}
+              onChange={(e) => updateThreshold(Number(e.target.value))}
+              className="rounded-md border border-black/15 bg-transparent px-2 py-1 text-xs dark:border-white/20"
+            >
+              {[3, 5, 7, 10, 14].map((n) => (
+                <option
+                  key={n}
+                  value={n}
+                  className="bg-background text-foreground"
+                >
+                  {n} working days
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
       </div>
 
       {/* Stat tiles */}
@@ -295,6 +311,38 @@ export default function CorrespondenceApp({
           }
           pending={pending}
         />
+      )}
+      {confirmClear && (
+        <Modal
+          onClose={() => setConfirmClear(false)}
+          title="Clear all correspondence?"
+        >
+          <p className="text-sm text-black/70 dark:text-white/70">
+            This permanently deletes all {items.length} tracked items, including
+            any responded/snoozed status you&apos;ve set. Use it to wipe the list
+            before importing a fresh export.
+          </p>
+          <div className="flex justify-end gap-2 pt-4">
+            <button
+              onClick={() => setConfirmClear(false)}
+              className="rounded-lg px-4 py-2 text-sm font-medium text-black/60 hover:text-black dark:text-white/60 dark:hover:text-white"
+            >
+              Cancel
+            </button>
+            <button
+              disabled={pending}
+              onClick={() =>
+                run(async () => {
+                  await clearAllCorrespondence();
+                  setConfirmClear(false);
+                })
+              }
+              className="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white transition-opacity hover:opacity-80 disabled:opacity-40"
+            >
+              {pending ? "Clearing…" : "Delete all"}
+            </button>
+          </div>
+        </Modal>
       )}
     </div>
   );
@@ -802,6 +850,7 @@ function ImportModal({
   );
   const [defaultSource, setDefaultSource] = useState("Aconex");
   const [aiReasoning, setAiReasoning] = useState<string | null>(null);
+  const [aiError, setAiError] = useState<string | null>(null);
   const [aiOk, setAiOk] = useState(false);
   const [showManual, setShowManual] = useState(false);
   const [dragOver, setDragOver] = useState(false);
@@ -822,6 +871,7 @@ function ImportModal({
       let map = guessMapping(headers);
       let source = "Aconex";
       let reasoning: string | null = null;
+      let aiErr: string | null = null;
       let ok = false;
       try {
         const res = await fetch("/api/correspondence/interpret", {
@@ -840,13 +890,17 @@ function ImportModal({
           source = ai.source || "Aconex";
           reasoning = ai.reasoning || "Matched your columns automatically.";
           ok = true;
+        } else {
+          const j = await res.json().catch(() => null);
+          aiErr = j?.error ?? `Interpretation service returned ${res.status}.`;
         }
       } catch {
-        /* fall back to the offline guess */
+        aiErr = "Couldn't reach the interpretation service (network error).";
       }
       setMapping(map);
       setDefaultSource(source);
       setAiReasoning(reasoning);
+      setAiError(aiErr);
       setAiOk(ok);
       setShowManual(!ok);
       setStage("review");
@@ -981,8 +1035,14 @@ function ImportModal({
             </div>
           ) : (
             <div className="rounded-lg border border-amber-400/40 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:bg-amber-950/30 dark:text-amber-200">
-              Couldn&apos;t reach Claude to interpret this file — I&apos;ve
-              auto-matched the columns as best I can. Check the mapping below.
+              <p className="font-medium">
+                Claude didn&apos;t interpret this file — auto-matched the columns
+                instead.
+              </p>
+              <p className="mt-1">Check the detected columns below.</p>
+              {aiError && (
+                <p className="mt-1 font-mono text-xs opacity-70">{aiError}</p>
+              )}
             </div>
           )}
 

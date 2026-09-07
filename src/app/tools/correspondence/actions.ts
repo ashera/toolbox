@@ -89,6 +89,12 @@ export async function deleteCorrespondence(id: string) {
   revalidatePath(PATH);
 }
 
+// Wipe every tracked item — used to reset before re-importing a fresh export.
+export async function clearAllCorrespondence() {
+  await prisma.correspondence.deleteMany({});
+  revalidatePath(PATH);
+}
+
 // Push the follow-up due date out by N calendar days ("snooze").
 export async function snoozeCorrespondence(id: string, days: number) {
   const due = new Date();

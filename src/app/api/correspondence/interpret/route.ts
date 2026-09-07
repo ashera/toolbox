@@ -11,6 +11,8 @@ export const maxDuration = 30;
 
 const FIELDS = ["subject", "sentTo", "sentDate", "reference", "status", "link", "notes"] as const;
 
+// Every field is a plain string (empty "" means "no column fits"). We avoid
+// nullable types so the schema stays within strict structured-output support.
 const SCHEMA = {
   type: "object",
   additionalProperties: false,
@@ -20,7 +22,7 @@ const SCHEMA = {
       type: "object",
       additionalProperties: false,
       properties: Object.fromEntries(
-        FIELDS.map((f) => [f, { type: ["string", "null"] }]),
+        FIELDS.map((f) => [f, { type: "string" }]),
       ),
       required: [...FIELDS],
     },
@@ -31,7 +33,7 @@ const SCHEMA = {
 
 const SYSTEM = `You map spreadsheet columns to fields for a construction project manager's correspondence tracker (e.g. an exported Aconex mail register, or an email export).
 
-Given the column headers and a few sample rows, decide which header best fills each target field. Return the EXACT header string, or null if no column fits.
+Given the column headers and a few sample rows, decide which header best fills each target field. Return the EXACT header string, or an empty string "" if no column fits.
 
 Target fields:
 - subject: the main topic/title/description of the correspondence
@@ -43,7 +45,7 @@ Target fields:
 - notes: any free-text remarks/comments column
 
 Also infer whether the data is "Aconex" (construction mail register), "Email", or "Other".
-Prefer the recipient column for sentTo; if there's both a "To" and a "From", never pick "From". Only map a field if a column genuinely fits.`;
+Prefer the recipient column for sentTo; if there's both a "To" and a "From", never pick "From". Only map a field if a column genuinely fits; otherwise use "".`;
 
 export async function POST(req: Request) {
   if (!process.env.ANTHROPIC_API_KEY) {
